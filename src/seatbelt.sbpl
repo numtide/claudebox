@@ -10,19 +10,19 @@
 ; Child processes inherit the policy of their parent
 (allow process-exec)
 (allow process-fork)
-(allow signal (target same-sandbox))
+; tmux needs unrestricted signal for process management
+(allow signal)
 
 ; Allow cf prefs to work
 (allow user-preference-read)
 
-; Process info for same sandbox
-(allow process-info* (target same-sandbox))
+; Process info - tmux needs this for process management
+(allow process-info*)
 
-; Allow writing to /dev/null
+; Allow writing to character devices (PTYs, ttys, /dev/null)
+; This is needed for tmux and terminal operations
 (allow file-write-data
-  (require-all
-    (path "/dev/null")
-    (vnode-type CHARACTER-DEVICE)))
+  (vnode-type CHARACTER-DEVICE))
 
 ; Sysctls permitted - CPU/kernel info needed by Node.js and various tools
 (allow sysctl-read
@@ -74,12 +74,14 @@
   (iokit-registry-entry-class "RootDomainUserClient"))
 
 ; Mach lookups needed for system services
-(allow mach-lookup
-  (global-name "com.apple.system.opendirectoryd.libinfo")
-  (global-name "com.apple.PowerManagement.control"))
+; Note: tmux and other terminal tools need broader mach access for PTY operations
+(allow mach-lookup)
 
 ; Needed for Python multiprocessing (SemLock) and Node.js
 (allow ipc-posix-sem)
+
+; Needed for PTY/terminal control (tmux, shells)
+(allow file-ioctl)
 
 ; Dynamic policies are appended at runtime:
 ; - (allow file-read*)

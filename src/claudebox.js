@@ -455,6 +455,8 @@ class SeatbeltSandbox extends Sandbox {
 			...process.env,
 			SESSION_NAME: sessionName,
 			CLAUDEBOX_LOG_FILE: logfile,
+			// Use isolated tmux socket directory to avoid conflicts with host tmux server
+			TMUX_TMPDIR: canonicalSlashTmp,
 		};
 
 		return {
@@ -737,9 +739,12 @@ function main() {
 	// Build script and launch
 	const splitFlag = options.splitDirection === "vertical" ? "-v" : "-h";
 
+	// On macOS, set TMUX_TMPDIR in script to avoid conflicts with host tmux server
+	const tmuxTmpdirExport = process.platform === "darwin" ? "export TMUX_TMPDIR=/private/tmp\n" : "";
+
 	const script = options.enableMonitor
 		? `
-cd '${projectDir}'
+${tmuxTmpdirExport}cd '${projectDir}'
 tmux new-session -d -s '${sessionName}' -n main 'claude --dangerously-skip-permissions' 2>/dev/null
 tmux set-option -t '${sessionName}' history-limit 50000
 tmux split-window -d ${splitFlag} -t '${sessionName}:main' "exec command-viewer '${logfile}'"
