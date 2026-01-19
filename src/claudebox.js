@@ -375,7 +375,8 @@ class BubblewrapSandbox extends Sandbox {
 
 class SeatbeltSandbox extends Sandbox {
 	wrap(script) {
-		const { repoRoot, logfile, sessionName } = this.config;
+		const { repoRoot, logfile, sessionName, claudeConfig, claudeJson } =
+			this.config;
 
 		// Load base policy from environment
 		const seatbeltProfile = process.env.CLAUDEBOX_SEATBELT_PROFILE;
@@ -393,11 +394,23 @@ class SeatbeltSandbox extends Sandbox {
 		const canonicalTmpdir = realpath(tmpdir);
 		const canonicalSlashTmp = realpath("/tmp");
 
+		// Canonicalize Claude config paths
+		// claudeConfig directory may not exist yet, so use the path directly
+		const canonicalClaudeConfig = pathExists(claudeConfig)
+			? realpath(claudeConfig)
+			: claudeConfig;
+		// claudeJson file may not exist yet, so use the path directly
+		const canonicalClaudeJson = pathExists(claudeJson)
+			? realpath(claudeJson)
+			: claudeJson;
+
 		// Build dynamic policy
 		const writablePaths = [
 			'(subpath (param "PROJECT_DIR"))',
 			'(subpath (param "TMPDIR"))',
 			'(subpath (param "LOGFILE_DIR"))',
+			'(subpath (param "CLAUDE_CONFIG"))', // ~/.claude directory
+			'(literal (param "CLAUDE_JSON"))', // ~/.claude.json file
 		];
 
 		if (canonicalTmpdir !== canonicalSlashTmp) {
@@ -427,6 +440,8 @@ class SeatbeltSandbox extends Sandbox {
 			`-DPROJECT_DIR=${canonicalRepoRoot}`,
 			`-DTMPDIR=${canonicalTmpdir}`,
 			`-DLOGFILE_DIR=${path.dirname(logfile)}`,
+			`-DCLAUDE_CONFIG=${canonicalClaudeConfig}`,
+			`-DCLAUDE_JSON=${canonicalClaudeJson}`,
 		];
 
 		if (canonicalTmpdir !== canonicalSlashTmp) {
