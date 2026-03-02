@@ -381,6 +381,23 @@ class SeatbeltSandbox extends Sandbox {
 // CLI Argument Parsing
 // =============================================================================
 
+function mergeOptions(cliOverrides, config) {
+	return {
+		allowSshAgent:
+			cliOverrides.allowSshAgent !== undefined
+				? cliOverrides.allowSshAgent
+				: config.allowSshAgent,
+		allowGpgAgent:
+			cliOverrides.allowGpgAgent !== undefined
+				? cliOverrides.allowGpgAgent
+				: config.allowGpgAgent,
+		allowXdgRuntime:
+			cliOverrides.allowXdgRuntime !== undefined
+				? cliOverrides.allowXdgRuntime
+				: config.allowXdgRuntime,
+	};
+}
+
 function parseArgs(args) {
 	// Load config file first
 	const config = loadConfig();
@@ -418,6 +435,13 @@ function parseArgs(args) {
 				process.exit(0);
 				break;
 
+			case "--":
+				// Everything after -- is passed to claude
+				return {
+					...mergeOptions(cliOverrides, config),
+					claudeArgs: args.slice(i + 1),
+				};
+
 			default:
 				console.error(`Unknown option: ${arg}`);
 				console.error("Use --help for usage information");
@@ -425,28 +449,12 @@ function parseArgs(args) {
 		}
 	}
 
-	// Merge: CLI overrides > config file > defaults
-	const options = {
-		allowSshAgent:
-			cliOverrides.allowSshAgent !== undefined
-				? cliOverrides.allowSshAgent
-				: config.allowSshAgent,
-		allowGpgAgent:
-			cliOverrides.allowGpgAgent !== undefined
-				? cliOverrides.allowGpgAgent
-				: config.allowGpgAgent,
-		allowXdgRuntime:
-			cliOverrides.allowXdgRuntime !== undefined
-				? cliOverrides.allowXdgRuntime
-				: config.allowXdgRuntime,
-	};
-
-	return options;
+	return { ...mergeOptions(cliOverrides, config), claudeArgs: [] };
 }
 
 function showHelp() {
 	const configPath = getConfigPath();
-	console.log(`Usage: claudebox [OPTIONS]
+	console.log(`Usage: claudebox [OPTIONS] [-- CLAUDE_ARGS...]
 
 Options:
   --allow-ssh-agent                       Allow access to SSH agent socket
@@ -473,7 +481,9 @@ Security:
 Examples:
   claudebox                               # Run with default settings
   claudebox --allow-ssh-agent             # Allow SSH agent for git operations
-  claudebox --allow-xdg-runtime           # Allow full XDG runtime access`);
+  claudebox --allow-xdg-runtime           # Allow full XDG runtime access
+  claudebox -- -p "fix the tests"         # Pass arguments to claude
+  claudebox --allow-ssh-agent -- --resume # Combine claudebox and claude options`);
 }
 
 // =============================================================================
@@ -561,9 +571,12 @@ function main() {
 	}
 
 	// Build script and launch
+	const claudeArgs = options.claudeArgs
+		.map((a) => `'${a.replace(/'/g, "'\\''")}'`)
+		.join(" ");
 	const script = `
 cd '${projectDir}'
-exec claude --dangerously-skip-permissions
+exec claude --dangerously-skip-permissions${claudeArgs ? " " + claudeArgs : ""}
 `;
 
 	const child = sandbox.spawn(script);
