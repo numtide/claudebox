@@ -64,6 +64,7 @@ pkgs.runCommand "claudebox"
     # Create claudebox executable with platform-specific configuration
     makeWrapper ${pkgs.nodejs}/bin/node $out/bin/claudebox \
       --add-flags $out/libexec/claudebox/claudebox.js \
+      --prefix PATH : $out/libexec/claudebox \
       --prefix PATH : ${
         pkgs.lib.makeBinPath (
           [
