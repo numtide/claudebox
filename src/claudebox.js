@@ -194,6 +194,9 @@ class BubblewrapSandbox extends Sandbox {
 			"--ro-bind-try",
 			"/run/booted-system",
 			"/run/booted-system",
+
+			// WSL2: /etc/resolv.conf is a symlink to /mnt/wsl/resolv.conf.
+			"--ro-bind-try", "/mnt/wsl", "/mnt/wsl",
 			"--ro-bind-try",
 			"/run/opengl-driver",
 			"/run/opengl-driver",
