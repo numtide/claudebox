@@ -55,6 +55,24 @@ function getTmpDir() {
 	return process.env.TMPDIR || process.env.TEMP || process.env.TMP || "/tmp";
 }
 
+function addToGitignore(repoRoot, entry) {
+	const gitignorePath = path.join(repoRoot, ".gitignore");
+	let content = "";
+	try {
+		content = fs.readFileSync(gitignorePath, "utf8");
+	} catch {
+		// File doesn't exist yet, start empty
+	}
+	const lines = content.split("\n");
+	if (!lines.some((line) => line.trim() === entry)) {
+		const newContent =
+			content === "" || content.endsWith("\n")
+				? content + entry + "\n"
+				: content + "\n" + entry + "\n";
+		fs.writeFileSync(gitignorePath, newContent);
+	}
+}
+
 // =============================================================================
 // Configuration
 // =============================================================================
@@ -63,6 +81,7 @@ const CONFIG_DEFAULTS = {
 	allowSshAgent: false,
 	allowGpgAgent: false,
 	allowXdgRuntime: false,
+	persistHome: false,
 };
 
 function getConfigPath() {
@@ -390,6 +409,7 @@ function parseArgs(args) {
 		allowSshAgent: undefined,
 		allowGpgAgent: undefined,
 		allowXdgRuntime: undefined,
+		persistHome: undefined,
 	};
 
 	let i = 0;
@@ -411,6 +431,18 @@ function parseArgs(args) {
 				cliOverrides.allowXdgRuntime = true;
 				i++;
 				break;
+
+			case "--persist-home": {
+				const next = args[i + 1];
+				if (next !== undefined && !next.startsWith("-")) {
+					cliOverrides.persistHome = next;
+					i += 2;
+				} else {
+					cliOverrides.persistHome = true;
+					i++;
+				}
+				break;
+			}
 
 			case "-h":
 			case "--help":
@@ -439,6 +471,10 @@ function parseArgs(args) {
 			cliOverrides.allowXdgRuntime !== undefined
 				? cliOverrides.allowXdgRuntime
 				: config.allowXdgRuntime,
+		persistHome:
+			cliOverrides.persistHome !== undefined
+				? cliOverrides.persistHome
+				: config.persistHome,
 	};
 
 	return options;
@@ -452,6 +488,11 @@ Options:
   --allow-ssh-agent                       Allow access to SSH agent socket
   --allow-gpg-agent                       Allow access to GPG agent socket
   --allow-xdg-runtime                     Allow full XDG runtime directory access
+  --persist-home [path]                   Use a persistent home directory.
+                                          Without a path: uses .claudebox/home
+                                          inside the repo (auto-added to
+                                          .gitignore). With a path: bind-mounts
+                                          that directory as $HOME.
   -h, --help                              Show this help message
 
 Configuration:
@@ -462,7 +503,8 @@ Configuration:
     {
       "allowSshAgent": false,
       "allowGpgAgent": false,
-      "allowXdgRuntime": false
+      "allowXdgRuntime": false,
+      "persistHome": false
     }
 
 Security:
@@ -470,10 +512,16 @@ Security:
   which contains DBus, audio, display, and other sensitive sockets.
   Use --allow-* flags to selectively enable access to specific services.
 
+  By default, $HOME inside the sandbox is a fresh temporary directory that is
+  discarded after each session. Use --persist-home to keep downloaded
+  dependencies (e.g. Maven, npm, pip caches) across sessions.
+
 Examples:
   claudebox                               # Run with default settings
   claudebox --allow-ssh-agent             # Allow SSH agent for git operations
-  claudebox --allow-xdg-runtime           # Allow full XDG runtime access`);
+  claudebox --allow-xdg-runtime           # Allow full XDG runtime access
+  claudebox --persist-home                # Persistent home in .claudebox/home
+  claudebox --persist-home /opt/myproject # Persistent home at explicit path`);
 }
 
 // =============================================================================
@@ -489,28 +537,43 @@ function main() {
 	const repoRoot = getRepoRoot(projectDir);
 	const sessionId = randomHex(8);
 
-	// Create isolated home directory
 	const home = process.env.HOME;
-	const claudeHome = path.join(getTmpDir(), `claudebox-${sessionId}`);
 
-	// Cleanup handler
-	const cleanup = () => {
-		try {
-			fs.rmSync(claudeHome, { recursive: true, force: true });
-		} catch {
-			// Ignore cleanup errors
-		}
-	};
+	// Determine home directory for the sandbox
+	let claudeHome;
+	let persistentHome = false;
 
-	process.on("exit", cleanup);
-	process.on("SIGINT", () => {
-		cleanup();
-		process.exit(130);
-	});
-	process.on("SIGTERM", () => {
-		cleanup();
-		process.exit(143);
-	});
+	if (options.persistHome === true) {
+		claudeHome = path.join(repoRoot, ".claudebox", "home");
+		persistentHome = true;
+		addToGitignore(repoRoot, ".claudebox/home");
+	} else if (options.persistHome) {
+		claudeHome = path.resolve(options.persistHome);
+		persistentHome = true;
+	} else {
+		claudeHome = path.join(getTmpDir(), `claudebox-${sessionId}`);
+	}
+
+	// Cleanup handler (only for ephemeral temp dirs)
+	if (!persistentHome) {
+		const cleanup = () => {
+			try {
+				fs.rmSync(claudeHome, { recursive: true, force: true });
+			} catch {
+				// Ignore cleanup errors
+			}
+		};
+
+		process.on("exit", cleanup);
+		process.on("SIGINT", () => {
+			cleanup();
+			process.exit(130);
+		});
+		process.on("SIGTERM", () => {
+			cleanup();
+			process.exit(143);
+		});
+	}
 
 	fs.mkdirSync(claudeHome, { recursive: true });
 
